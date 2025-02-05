@@ -1,11 +1,16 @@
-from flask import Flask, request
-import os
+from flask import Flask, request, jsonify
+import boto3
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# Save locally on EC2 currently
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Configure S3
+S3_BUCKET = "1229602090-in-bucket"
+S3_REGION = "us-east-1"  # e.g., us-east-1
+
+# Initialize S3 client
+s3_client = boto3.client("s3")
+
 
 # use post method
 @app.route("/", methods=["POST"])
@@ -17,10 +22,17 @@ def upload_file():
     if file.filename == "":
         return {"error": "No selected file"}, 400
 
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(file_path)
+    try:
+        # Secure filename
+        filename = secure_filename(file.filename)
 
-    return {"message": f"File saved to {file_path}"}, 200
+        # Upload to S3
+        s3_client.upload_fileobj(file, S3_BUCKET, filename)
+
+        return jsonify({"message": "File uploaded successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

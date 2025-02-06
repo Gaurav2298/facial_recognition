@@ -1,1 +1,7 @@
 /venv
+/face_images_1000
+/clear_simpledb.py
+/image_data_set_for_simple_db.csv
+/search_simpledb.py
+/simple_db_upload.py
+.DS_Store

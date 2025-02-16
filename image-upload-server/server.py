@@ -2,11 +2,14 @@ from flask import Flask, request, jsonify, Response
 import boto3
 from werkzeug.utils import secure_filename
 import os, io
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import signal
+import sys
 
 app = Flask(__name__)
 
-executor = ThreadPoolExecutor(max_workers=8)
+executor = ThreadPoolExecutor(max_workers=100)
+upload_futures = []  # Track ongoing uploads
 
 # Configure S3
 S3_BUCKET = "1229602090-in-bucket"
@@ -74,13 +77,34 @@ def upload_file():
 
         # Upload to S3
         # Submit the upload task to the thread pool
-        executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
+        # executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
+        # Submit the upload task asynchronously and track it
+        future = executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
+        upload_futures.append(future)
 
         # Return plain text response in the required format
         return Response(f"{name_without_extension}:{value}", mimetype="text/plain"), 200
 
     except Exception as e:
         return Response(f"ERROR:{str(e)}", mimetype="text/plain"), 500
+
+# Graceful shutdown handler
+def shutdown_handler(signum, frame):
+    print("Shutting down. Waiting for uploads to complete...")
+    
+    # Ensure all uploads complete before shutting down
+    for future in as_completed(upload_futures):
+        try:
+            future.result()  # Blocks until the upload completes
+        except Exception as e:
+            print(f"Error during upload: {e}")
+
+    executor.shutdown(wait=True)  # Wait for all background tasks
+    sys.exit(0)
+
+# Register signal handlers for graceful shutdown
+signal.signal(signal.SIGINT, shutdown_handler)  # Handle Ctrl+C
+signal.signal(signal.SIGTERM, shutdown_handler) # Handle termination signals
 
 if __name__ == "__main__":
     app.run(threaded=True, port=8000)

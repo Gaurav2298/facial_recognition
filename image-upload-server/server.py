@@ -1,9 +1,12 @@
 from flask import Flask, request, jsonify, Response
 import boto3
 from werkzeug.utils import secure_filename
-import os
+import os, io
+from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
+
+executor = ThreadPoolExecutor(max_workers=8)
 
 # Configure S3
 S3_BUCKET = "1229602090-in-bucket"
@@ -41,6 +44,13 @@ def get_attribute_value(item_name: str, attribute_name: str):
         print(f"Error fetching attribute '{attribute_name}' for item '{item_name}': {e}")
         return None
 
+
+def upload_to_s3(file_buffer, bucket, key):
+    # This function runs in a separate thread.
+    # Ensure file_buffer's pointer is at the beginning.
+    file_buffer.seek(0)
+    s3_client.upload_fileobj(file_buffer, bucket, key)
+
 # use post method
 @app.route("/", methods=["POST"])
 def upload_file():
@@ -58,8 +68,13 @@ def upload_file():
         name_without_extension = os.path.splitext(filename)[0]
         value = get_attribute_value(name_without_extension, "Results")
 
+        # Read the file into memory to ensure the stream remains accessible
+        file_bytes = file.read()
+        file_buffer = io.BytesIO(file_bytes)
+
         # Upload to S3
-        s3_client.upload_fileobj(file, S3_BUCKET, filename)
+        # Submit the upload task to the thread pool
+        executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
 
         # Return plain text response in the required format
         return Response(f"{name_without_extension}:{value}", mimetype="text/plain"), 200
@@ -68,4 +83,4 @@ def upload_file():
         return Response(f"ERROR:{str(e)}", mimetype="text/plain"), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    app.run(threaded=True, port=8000)

@@ -1,110 +1,75 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, Response
 import boto3
 from werkzeug.utils import secure_filename
 import os, io
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import signal
-import sys
 
 app = Flask(__name__)
 
 executor = ThreadPoolExecutor(max_workers=100)
-upload_futures = []  # Track ongoing uploads
 
 # Configure S3
 S3_BUCKET = "1229602090-in-bucket"
-S3_REGION = "us-east-1"  # e.g., us-east-1
+S3_REGION = "us-east-1"
 
 # Initialize S3 client
 s3_client = boto3.client("s3")
 
 def get_attribute_value(item_name: str, attribute_name: str):
-    """
-    Fetches a specific attribute's value for a given item in SimpleDB.
-    """
-    # AWS SimpleDB Client
     client = boto3.client('sdb', region_name='us-east-1')
-
-    # Define the domain
     domain_name = "1229602090-simpleDB"
 
     try:
-        # Fetch attributes of the given item
         response = client.get_attributes(DomainName=domain_name, ItemName=item_name)
-
-        # Check if attributes exist
         if "Attributes" in response:
             for attr in response["Attributes"]:
                 if attr["Name"] == attribute_name:
-                    return attr["Value"]  # Return the specific attribute value
-            
-            print(f"Attribute '{attribute_name}' not found in item '{item_name}'.")
-            return None
-        else:
-            print(f"Item '{item_name}' not found.")
-            return None
+                    return attr["Value"]
+        return None
     except Exception as e:
-        print(f"Error fetching attribute '{attribute_name}' for item '{item_name}': {e}")
+        print(f"Error fetching attribute: {e}")
         return None
 
-
 def upload_to_s3(file_buffer, bucket, key):
-    # This function runs in a separate thread.
-    # Ensure file_buffer's pointer is at the beginning.
-    file_buffer.seek(0)
-    s3_client.upload_fileobj(file_buffer, bucket, key)
+    """Upload file buffer to S3"""
+    try:
+        file_buffer.seek(0)
+        s3_client.upload_fileobj(file_buffer, bucket, key)
+        return key  # Return filename on success
+    except Exception as e:
+        print(f"Upload failed for {key}: {e}")
+        return None  # Return None on failure
 
-# use post method
 @app.route("/", methods=["POST"])
 def upload_file():
     if "inputFile" not in request.files:
-        return Response("ERROR:No file part in http payload", mimetype="text/plain"), 400
+        return Response("ERROR: No file part in HTTP payload", mimetype="text/plain"), 400
 
     file = request.files["inputFile"]
     if file.filename == "":
-        return Response("ERROR:No selected file", mimetype="text/plain"), 400
+        return Response("ERROR: No selected file", mimetype="text/plain"), 400
 
     try:
-        # Secure filename
         filename = secure_filename(file.filename)
-
         name_without_extension = os.path.splitext(filename)[0]
         value = get_attribute_value(name_without_extension, "Results")
 
-        # Read the file into memory to ensure the stream remains accessible
         file_bytes = file.read()
         file_buffer = io.BytesIO(file_bytes)
 
-        # Upload to S3
-        # Submit the upload task to the thread pool
-        # executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
-        # Submit the upload task asynchronously and track it
+        # Submit the upload task asynchronously
         future = executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
-        upload_futures.append(future)
 
-        # Return plain text response in the required format
+        # Wait for completion using as_completed()
+        for completed_future in as_completed([future]):
+            result = completed_future.result()
+            if result is None:
+                return Response(f"ERROR: Failed to upload {filename} to S3", mimetype="text/plain"), 500
+
         return Response(f"{name_without_extension}:{value}", mimetype="text/plain"), 200
 
     except Exception as e:
-        return Response(f"ERROR:{str(e)}", mimetype="text/plain"), 500
-
-# Graceful shutdown handler
-def shutdown_handler(signum, frame):
-    print("Shutting down. Waiting for uploads to complete...")
-    
-    # Ensure all uploads complete before shutting down
-    for future in as_completed(upload_futures):
-        try:
-            future.result()  # Blocks until the upload completes
-        except Exception as e:
-            print(f"Error during upload: {e}")
-
-    executor.shutdown(wait=True)  # Wait for all background tasks
-    sys.exit(0)
-
-# Register signal handlers for graceful shutdown
-signal.signal(signal.SIGINT, shutdown_handler)  # Handle Ctrl+C
-signal.signal(signal.SIGTERM, shutdown_handler) # Handle termination signals
+        return Response(f"ERROR: {str(e)}", mimetype="text/plain"), 500
 
 if __name__ == "__main__":
     app.run(threaded=True, port=8000)

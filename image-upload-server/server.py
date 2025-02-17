@@ -52,21 +52,35 @@ def upload_file():
     try:
         filename = secure_filename(file.filename)
         name_without_extension = os.path.splitext(filename)[0]
-        value = get_attribute_value(name_without_extension, "Results")
+        # value = get_attribute_value(name_without_extension, "Results")
 
-        file_bytes = file.read()
-        file_buffer = io.BytesIO(file_bytes)
+        # file_bytes = file.read()
+        # file_buffer = io.BytesIO(file_bytes)
+        file_buffer = file.stream  # Stream instead of reading into memory
 
         # Submit the upload task asynchronously
-        future = executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
+        # future = executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
+
+        # Submit both tasks in parallel
+        future_sdb = executor.submit(get_attribute_value, name_without_extension, "Results")
+        future_s3 = executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
+
+        # Wait for both tasks to complete
+        sdb_result = future_sdb.result()
+        s3_result = future_s3.result()
+
+        # Check if S3 upload failed
+        if s3_result is None:
+            return Response(f"ERROR: Failed to upload {filename} to S3", mimetype="text/plain"), 500
+
 
         # Wait for completion using as_completed()
-        for completed_future in as_completed([future]):
-            result = completed_future.result()
-            if result is None:
-                return Response(f"ERROR: Failed to upload {filename} to S3", mimetype="text/plain"), 500
+        # for completed_future in as_completed([future]):
+        #     result = completed_future.result()
+        #     if result is None:
+        #         return Response(f"ERROR: Failed to upload {filename} to S3", mimetype="text/plain"), 500
 
-        return Response(f"{name_without_extension}:{value}", mimetype="text/plain"), 200
+        return Response(f"{name_without_extension}:{sdb_result}", mimetype="text/plain"), 200
 
     except Exception as e:
         return Response(f"ERROR: {str(e)}", mimetype="text/plain"), 500

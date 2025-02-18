@@ -1,7 +1,7 @@
 from flask import Flask, request, Response
 import boto3
 from werkzeug.utils import secure_filename
-import os, io
+import os, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__)
@@ -15,12 +15,17 @@ S3_REGION = "us-east-1"
 # Initialize S3 client
 s3_client = boto3.client("s3")
 
-def get_attribute_value(item_name: str, attribute_name: str):
-    client = boto3.client('sdb', region_name='us-east-1')
-    domain_name = "1229602090-simpleDB"
+client = boto3.client('sdb', region_name='us-east-1')
+domain_name = "1229602090-simpleDB"
 
+def get_attribute_value(item_name: str, attribute_name: str):
     try:
+        start_time = time.time()  # Start time
         response = client.get_attributes(DomainName=domain_name, ItemName=item_name)
+        end_time = time.time()  # End time
+        elapsed_time = end_time - start_time
+        print(f"SDB Query Time: {elapsed_time:.4f} seconds")  # Log response time
+
         if "Attributes" in response:
             for attr in response["Attributes"]:
                 if attr["Name"] == attribute_name:
@@ -34,7 +39,11 @@ def upload_to_s3(file_buffer, bucket, key):
     """Upload file buffer to S3"""
     try:
         file_buffer.seek(0)
+        start_time = time.time()  # Start time
         s3_client.upload_fileobj(file_buffer, bucket, key)
+        end_time = time.time()  # End time
+        elapsed_time = end_time - start_time
+        print(f"S3 Upload Time: {elapsed_time:.4f} seconds")  # Log response time
         return key  # Return filename on success
     except Exception as e:
         print(f"Upload failed for {key}: {e}")
@@ -52,14 +61,8 @@ def upload_file():
     try:
         filename = secure_filename(file.filename)
         name_without_extension = os.path.splitext(filename)[0]
-        # value = get_attribute_value(name_without_extension, "Results")
 
-        # file_bytes = file.read()
-        # file_buffer = io.BytesIO(file_bytes)
         file_buffer = file.stream  # Stream instead of reading into memory
-
-        # Submit the upload task asynchronously
-        # future = executor.submit(upload_to_s3, file_buffer, S3_BUCKET, filename)
 
         # Submit both tasks in parallel
         future_sdb = executor.submit(get_attribute_value, name_without_extension, "Results")
@@ -72,13 +75,6 @@ def upload_file():
         # Check if S3 upload failed
         if s3_result is None:
             return Response(f"ERROR: Failed to upload {filename} to S3", mimetype="text/plain"), 500
-
-
-        # Wait for completion using as_completed()
-        # for completed_future in as_completed([future]):
-        #     result = completed_future.result()
-        #     if result is None:
-        #         return Response(f"ERROR: Failed to upload {filename} to S3", mimetype="text/plain"), 500
 
         return Response(f"{name_without_extension}:{sdb_result}", mimetype="text/plain"), 200
 

@@ -15,24 +15,24 @@ SDB_DOMAIN_NAME = "1229602090-simpleDB"
 s3_client = boto3.client("s3", region_name=S3_REGION)
 sdb_client = boto3.client("sdb", region_name=S3_REGION)
 
-
 async def get_attribute_value(item_name: str, attribute_name: str):
-    """Fetch attribute value from AWS SimpleDB asynchronously using boto3"""
+    """Fetch attribute value from AWS SimpleDB using a SELECT query asynchronously"""
     try:
+        query = f"SELECT {attribute_name} FROM `{SDB_DOMAIN_NAME}` WHERE itemName() = '{item_name}'"
         response = await asyncio.to_thread(
-            sdb_client.get_attributes,
-            DomainName=SDB_DOMAIN_NAME,
-            ItemName=item_name
+            sdb_client.select,
+            SelectExpression=query
         )
-        if "Attributes" in response:
-            for attr in response["Attributes"]:
-                if attr["Name"] == attribute_name:
-                    return attr["Value"]
+
+        if "Items" in response:
+            for item in response["Items"]:
+                for attr in item["Attributes"]:
+                    if attr["Name"] == attribute_name:
+                        return attr["Value"]
         return None
     except Exception as e:
-        print(f"Error fetching attribute: {e}")
+        print(f"Error fetching attribute using SELECT: {e}")
         return None
-
 
 async def upload_to_s3(file_obj, bucket: str, key: str):
     """Upload file directly to S3 asynchronously using boto3"""

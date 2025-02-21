@@ -1,6 +1,7 @@
 import asyncio
 import boto3
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response
+import threading
 
 app = FastAPI()
 
@@ -34,17 +35,21 @@ async def get_attribute_value(item_name: str, attribute_name: str):
         print(f"Error fetching attribute using SELECT: {e}")
         return None
 
-async def upload_to_s3(file_obj, bucket: str, key: str):
-    """Upload file directly to S3 asynchronously using boto3"""
-    try:
-        await asyncio.to_thread(
-                s3_client.put_object, Bucket=bucket, Key=key, Body=file_obj
-            )
-        return key
-    except Exception as e:
-        print(f"Upload failed for {key}: {e}")
-        return None
+# async def upload_to_s3(file_obj, bucket: str, key: str):
+#     """Upload file directly to S3 asynchronously using boto3"""
+#     try:
+#         await asyncio.to_thread(
+#                 s3_client.put_object, Bucket=bucket, Key=key, Body=file_obj
+#             )
+#         return key
+#     except Exception as e:
+#         print(f"Upload failed for {key}: {e}")
+#         return None
 
+def uploadFileObj(file_data, bucket_name, s3_file_key):
+    res = s3_client.put_object(Body=file_data, 
+                        Bucket=bucket_name, 
+                        Key=s3_file_key)
 
 @app.post("/")
 async def upload_file(inputFile: UploadFile = File(...)):
@@ -54,12 +59,14 @@ async def upload_file(inputFile: UploadFile = File(...)):
 
         # Fetch attribute from SimpleDB asynchronously
         sdb_result = await get_attribute_value(name_without_extension, "Results")
-
+        file_data = inputFile.read()
         # Upload file to S3 asynchronously without storing it locally
-        s3_result = await upload_to_s3(inputFile.file, S3_BUCKET, filename)
-
-        if s3_result is None:
-            return Response(f"ERROR: Failed to upload {filename} to S3", media_type="text/plain", status_code=500)
+        # s3_result = await upload_to_s3(inputFile.file, S3_BUCKET, filename)
+        s3_upload_thread = threading.Thread(
+            target=inputFile.file,
+            args=(file_data, S3_BUCKET, filename)
+        )
+        s3_upload_thread.start()
 
         return Response(f"{name_without_extension}:{sdb_result}", media_type="text/plain")
 

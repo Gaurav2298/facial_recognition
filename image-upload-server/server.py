@@ -1,7 +1,5 @@
 import asyncio
-import os
 import boto3
-import aiofiles
 from fastapi import FastAPI, File, UploadFile, HTTPException, Response
 
 app = FastAPI()
@@ -36,15 +34,12 @@ async def get_attribute_value(item_name: str, attribute_name: str):
         return None
 
 
-async def upload_to_s3(file_path: str, bucket: str, key: str):
-    """Upload file asynchronously to S3 using boto3"""
+async def upload_to_s3(file_obj, bucket: str, key: str):
+    """Upload file directly to S3 asynchronously using boto3"""
     try:
         await asyncio.to_thread(
-            s3_client.upload_file,
-            file_path,
-            bucket,
-            key
-        )
+                s3_client.put_object, Bucket=bucket, Key=key, Body=file_obj
+            )
         return key
     except Exception as e:
         print(f"Upload failed for {key}: {e}")
@@ -54,23 +49,14 @@ async def upload_to_s3(file_path: str, bucket: str, key: str):
 @app.post("/")
 async def upload_file(inputFile: UploadFile = File(...)):
     try:
-        filename = os.path.basename(inputFile.filename)
-        name_without_extension, _ = os.path.splitext(filename)
-        file_path = f"/tmp/{filename}"
-
-        # Save the uploaded file to disk asynchronously
-        async with aiofiles.open(file_path, "wb") as buffer:
-            content = await inputFile.read()
-            await buffer.write(content)
+        filename = inputFile.filename
+        name_without_extension, _ = filename.rsplit(".", 1)
 
         # Fetch attribute from SimpleDB asynchronously
         sdb_result = await get_attribute_value(name_without_extension, "Results")
 
-        # Upload file to S3 asynchronously
-        s3_result = await upload_to_s3(file_path, S3_BUCKET, filename)
-
-        # Clean up the temporary file
-        os.remove(file_path)
+        # Upload file to S3 asynchronously without storing it locally
+        s3_result = await upload_to_s3(inputFile.file, S3_BUCKET, filename)
 
         if s3_result is None:
             return Response(f"ERROR: Failed to upload {filename} to S3", media_type="text/plain", status_code=500)

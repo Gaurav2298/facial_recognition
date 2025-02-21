@@ -1,7 +1,6 @@
 import asyncio
 import boto3
 from fastapi import FastAPI, File, UploadFile, Response
-import threading
 
 app = FastAPI()
 
@@ -17,7 +16,7 @@ s3_client = boto3.client("s3", region_name=S3_REGION)
 sdb_client = boto3.client("sdb", region_name=S3_REGION)
 
 async def get_attribute_value(item_name: str, attribute_name: str):
-    """Fetch attribute value from AWS SimpleDB using a SELECT query asynchronously"""
+    """Fetch attribute value from AWS SimpleDB asynchronously"""
     try:
         query = f"SELECT {attribute_name} FROM `{SDB_DOMAIN_NAME}` WHERE itemName() = '{item_name}'"
         response = await asyncio.to_thread(
@@ -35,11 +34,16 @@ async def get_attribute_value(item_name: str, attribute_name: str):
         print(f"Error fetching attribute using SELECT: {e}")
         return None
 
-def uploadFileObj(file_bytes, bucket_name, s3_file_key):
-    """Upload file to S3 synchronously"""
+async def uploadFileObj(file_bytes, bucket_name, s3_file_key):
+    """Upload file to S3 asynchronously"""
     try:
-        s3_client.put_object(Body=file_bytes, Bucket=bucket_name, Key=s3_file_key)
-        # print(f"Uploaded {s3_file_key} successfully")
+        await asyncio.to_thread(
+            s3_client.put_object,
+            Body=file_bytes,
+            Bucket=bucket_name,
+            Key=s3_file_key
+        )
+        print(f"Uploaded {s3_file_key} successfully")
     except Exception as e:
         print(f"Upload failed for {s3_file_key}: {e}")
 
@@ -52,15 +56,11 @@ async def upload_file(inputFile: UploadFile = File(...)):
         # Fetch attribute from SimpleDB asynchronously
         sdb_result = await get_attribute_value(name_without_extension, "Results")
 
-        # Read file into raw bytes (so it remains available for upload)
-        file_bytes = await inputFile.read()  # Read file content
+        # Read file into bytes (keeping it in memory)
+        file_bytes = await inputFile.read()
 
-        # Start a new thread for S3 upload, passing raw bytes instead of file stream
-        s3_upload_thread = threading.Thread(
-            target=uploadFileObj,
-            args=(file_bytes, S3_BUCKET, filename)
-        )
-        s3_upload_thread.start()
+        # Upload to S3 asynchronously without threading
+        asyncio.create_task(uploadFileObj(file_bytes, S3_BUCKET, filename))
 
         return Response(f"{name_without_extension}:{sdb_result}", media_type="text/plain")
 

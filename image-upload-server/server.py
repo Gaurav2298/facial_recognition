@@ -33,7 +33,7 @@ def uploadFileObj(file_bytes, bucket_name, s3_file_key):
     """Upload file to S3 synchronously"""
     try:
         s3_client.put_object(Body=file_bytes, Bucket=bucket_name, Key=s3_file_key)
-        print(f"Uploaded {s3_file_key} successfully")
+        # print(f"Uploaded {s3_file_key} successfully")
     except Exception as e:
         print(f"Upload failed for {s3_file_key}: {e}")
 

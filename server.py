@@ -36,11 +36,7 @@ def entrypoint():
     inputFile = request.files['inputFile']
     filename = inputFile.filename
     
-    file_data = inputFile.read();
-    s3_thread = threading.Thread(target=uploadFiletoS3, args=(file_data, filename));
-    # uploadFiletoS3(file_data, filename)
-    s3_thread.start()
-
+    uploadFiletoS3(inputFile.stream, filename)
     name_without_extension, _ = filename.rsplit(".", 1)
 
     name = identify_person(name_without_extension)

@@ -15,28 +15,8 @@ sdb_client = session.client("sdb", region_name=AWS_REGION)
 
 app = Flask(__name__)
 
-def generate_presigned_url(filename):
-    """Generate a pre-signed URL for direct S3 upload"""
-    return s3_client.generate_presigned_url(
-        'put_object',
-        Params={'Bucket': S3_BUCKET, 'Key': filename},
-        ExpiresIn=3600,  # URL valid for 1 hour
-        HttpMethod="PUT"
-    )
-
 def uploadFiletoS3(file_data, filename):
-    """Uploads file to S3 using a pre-signed URL from the server itself"""
-    presigned_url = generate_presigned_url(filename)
-    
-    response = requests.put(presigned_url, data=file_data)
-    if response.status_code == 200:
-        return True
-    else:
-        print(f"Failed to upload: {response.text}")
-        return False
-
-# def uploadFiletoS3(file_data, filename):
-#     s3_client.put_object(Body=file_data, Bucket=S3_BUCKET, Key=filename)
+    s3_client.put_object(Body=file_data, Bucket=S3_BUCKET, Key=filename)
 
 def identify_person(file_name):
     try:

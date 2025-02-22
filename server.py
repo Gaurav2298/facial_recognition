@@ -1,5 +1,6 @@
 from flask import Flask, request
 import boto3
+import threading
 # Constants
 AWS_REGION = "us-east-1"
 
@@ -36,7 +37,9 @@ def entrypoint():
     filename = inputFile.filename
     
     file_data = inputFile.read();
-    uploadFiletoS3(file_data, filename)
+    s3_thread = threading.Thread(target=uploadFiletoS3, args=(file_data, filename));
+    # uploadFiletoS3(file_data, filename)
+    s3_thread.start()
 
     name_without_extension, _ = filename.rsplit(".", 1)
 

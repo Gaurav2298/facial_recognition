@@ -53,14 +53,14 @@ async def upload_file(inputFile: UploadFile = File(...)):
         filename = inputFile.filename
         name_without_extension, _ = filename.rsplit(".", 1)
 
-        # Fetch attribute from SimpleDB asynchronously
-        sdb_result = await get_attribute_value(name_without_extension, "Results")
-
         # Read file into bytes (keeping it in memory)
         file_bytes = await inputFile.read()
 
         # Upload to S3 asynchronously without threading
         asyncio.create_task(uploadFileObj(file_bytes, S3_BUCKET, filename))
+
+        # Fetch attribute from SimpleDB asynchronously
+        sdb_result = await get_attribute_value(name_without_extension, "Results")
 
         return Response(f"{name_without_extension}:{sdb_result}", media_type="text/plain")
 

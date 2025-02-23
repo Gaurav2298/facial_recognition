@@ -1,6 +1,6 @@
 from flask import Flask, request
 import boto3
-import asyncio
+import threading
 # Constants
 AWS_REGION = "us-east-1"
 
@@ -15,8 +15,8 @@ sdb_client = session.client("sdb", region_name=AWS_REGION)
 
 app = Flask(__name__)
 
-async def uploadFiletoS3(file_data, filename):
-    await asyncio.to_thread(s3_client.put_object, Body=file_data, Bucket=S3_BUCKET, Key=filename)
+def uploadFiletoS3(file_data, filename):
+    s3_client.put_object(file_data, S3_BUCKET, filename)
 
 def identify_person(file_name):
     response = sdb_client.get_attributes(DomainName=SDB_DOMAIN_NAME, ItemName=file_name)
@@ -27,7 +27,7 @@ def identify_person(file_name):
     return None
 
 @app.route("/", methods=["POST"])
-async def entrypoint():
+def entrypoint():
     if 'inputFile' not in request.files:
         return "inputFile not present in http request.files"
 
@@ -36,7 +36,8 @@ async def entrypoint():
     # load the file in local memory
     # this is needed because asyncio operation looses file context once added to thread
     file_data = inputFile.read() 
-    await uploadFiletoS3(file_data, filename)
+    s3_thread = threading.Thread(target=uploadFiletoS3, args=(file_data, filename))
+    s3_thread.start()
 
     # find file name w/o extention    
     file_name_without_extension, _ = filename.rsplit(".", 1)

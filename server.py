@@ -16,13 +16,13 @@ sdb_client = session.client("sdb", region_name=AWS_REGION)
 app = Flask(__name__)
 
 def uploadFiletoS3(file_data, filename):
-    s3_client.put_object(file_data, S3_BUCKET, filename)
+    s3_client.put_object(Bucket=S3_BUCKET, Key=filename, Body=file_data)
 
 def identify_person(file_name):
     response = sdb_client.get_attributes(DomainName=SDB_DOMAIN_NAME, ItemName=file_name)
     if "Attributes" in response:
         for attr in response["Attributes"]:
-            if attr["Name"] == "Results":
+            if attr["Name"] == "Results": # this is the attr that hold name
                 return attr["Value"]
     return None
 
